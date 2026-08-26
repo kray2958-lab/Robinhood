@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "robinhood": {
+      "url": "https://agent.robinhood.com/mcp/trading",
+      "headers": {
+        "Authorization": "Bearer ${env:ROBINHOOD_ACCESS_TOKEN}"
+      }
+    },
+    "robinhood-local": {
+      "command": "node",
+      "args": ["c:/Users/kshit/OneDrive/Documents/Robinhood/mcp-server/dist/index.js"],
+      "env": {
+        "ROBINHOOD_CLIENT_ID": "${env:ROBINHOOD_CLIENT_ID}",
+        "ROBINHOOD_CLIENT_SECRET": "${env:ROBINHOOD_CLIENT_SECRET}",
+        "ROBINHOOD_ACCESS_TOKEN": "${env:ROBINHOOD_ACCESS_TOKEN}",
+        "ROBINHOOD_REFRESH_TOKEN": "${env:ROBINHOOD_REFRESH_TOKEN}",
+        "ROBINHOOD_MCP_SERVER_URL": "https://agent.robinhood.com/mcp/trading",
+        "ROBINHOOD_PAPER_TRADING": "true",
+        "ROBINHOOD_CRYPTO_ENABLED": "false",
+        "ROBINHOOD_AUDIT_LOG_PATH": "c:/Users/kshit/OneDrive/Documents/Robinhood/mcp-server/logs/audit.log"
+      }
+    }
+  }
+}

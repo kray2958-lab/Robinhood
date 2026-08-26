@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+logs/
+*.log
+__pycache__/
+*.pyc
+*.xlsx
+!**/stocklist.example.xlsx
+!**/*.example.xlsx
+.DS_Store
+Thumbs.db

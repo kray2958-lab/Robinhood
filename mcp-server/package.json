@@ -1,0 +1,30 @@
+{
+  "name": "robinhood-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Robinhood account data and trading",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "robinhood-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "dev:http": "tsx src/index.ts --transport=http"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^4.21.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
