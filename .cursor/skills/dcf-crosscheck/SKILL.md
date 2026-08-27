@@ -44,13 +44,14 @@ Default: **Yahoo Finance** via `yfinance` (cash flow statement, balance sheet, s
 
 ## DCF Calculation
 
-1. **Latest FCF** — use `Free Cash Flow`, or `Operating Cash Flow + Capital Expenditure`.
-2. **FCF growth rate** — CAGR from historical FCF (capped 0%–15%; default 3% if unavailable).
-3. **Project FCF** — 5 years forward at the growth rate.
-4. **Discount** — WACC default 10%, or `4% + beta × 6%` (clamped 8%–15%).
-5. **Terminal value** — Gordon Growth Model with 2.5% perpetual growth.
-6. **Equity value** — Enterprise Value − Net Debt (Total Debt − Cash).
-7. **DCF per share** — Equity Value ÷ Shares Outstanding.
+1. **FCF history** — use `Free Cash Flow`, or `Operating Cash Flow + Capital Expenditure`.
+2. **Normalized FCF** — mean of up to the 3 most recent *positive* annual FCF figures (skips negative/capex-spike years).
+3. **FCF growth rate** — CAGR across that positive window (capped 0%–15%; default 3% if unavailable or if the newest year is a sharp dip).
+4. **Project FCF** — 5 years forward from normalized FCF at the growth rate.
+5. **Discount** — WACC default 10%, or `4% + beta × 6%` (clamped 8%–15%).
+6. **Terminal value** — Gordon Growth Model with 2.5% perpetual growth.
+7. **Equity value** — Enterprise Value − Net Debt, where cash prefers cash + short-term investments.
+8. **DCF per share** — Equity Value ÷ Shares Outstanding (fallback: implied shares, balance-sheet ordinary shares, float shares, or shares issued).
 
 ## Crosscheck Logic
 
@@ -106,7 +107,11 @@ After the table, state:
     "fcf_growth_rate": 0.08,
     "terminal_growth_rate": 0.025,
     "projection_years": 5,
-    "latest_fcf": 99500000000
+    "normalized_fcf": 99500000000,
+    "fcf_window": [110000000000, 99500000000, 90000000000],
+    "total_debt": 100000000000,
+    "cash": 50000000000,
+    "shares": 15000000000
   }
 }
 ```

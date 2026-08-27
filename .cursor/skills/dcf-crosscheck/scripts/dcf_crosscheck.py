@@ -29,6 +29,107 @@ def _balance_row(balance: pd.DataFrame, *labels: str) -> float | None:
     return None
 
 
+def _positive_number(value: Any) -> float | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def resolve_share_count(info: dict[str, Any], balance: pd.DataFrame | None) -> float | None:
+    """Resolve shares from Yahoo info and/or balance sheet fields.
+
+    Preference order:
+    1. info.sharesOutstanding
+    2. info.impliedSharesOutstanding
+    3. balance sheet Ordinary Shares Number
+    4. info.floatShares
+    5. balance sheet Share Issued
+    """
+    for key in ("sharesOutstanding", "impliedSharesOutstanding"):
+        shares = _positive_number(info.get(key))
+        if shares is not None:
+            return shares
+
+    if balance is not None and not balance.empty:
+        shares = _balance_row(balance, "Ordinary Shares Number")
+        shares = _positive_number(shares)
+        if shares is not None:
+            return shares
+
+    shares = _positive_number(info.get("floatShares"))
+    if shares is not None:
+        return shares
+
+    if balance is not None and not balance.empty:
+        shares = _balance_row(balance, "Share Issued")
+        return _positive_number(shares)
+
+    return None
+
+
+def resolve_cash(balance: pd.DataFrame | None, info: dict[str, Any]) -> float:
+    """Liquid assets for net-debt: prefer cash + short-term investments."""
+    if balance is not None and not balance.empty:
+        cash = _balance_row(
+            balance,
+            "Cash Cash Equivalents And Short Term Investments",
+            "Cash And Cash Equivalents",
+            "Cash",
+        )
+        if cash is not None:
+            return max(cash, 0.0)
+
+    for key in ("totalCash", "cash"):
+        cash = _positive_number(info.get(key))
+        if cash is not None:
+            return cash
+    return 0.0
+
+
+def resolve_total_debt(balance: pd.DataFrame | None, info: dict[str, Any]) -> float:
+    if balance is not None and not balance.empty:
+        debt = _balance_row(balance, "Total Debt", "Long Term Debt")
+        if debt is not None:
+            return max(debt, 0.0)
+
+    debt = _positive_number(info.get("totalDebt"))
+    return debt if debt is not None else 0.0
+
+
+def normalize_fcf(fcf_series: pd.Series) -> tuple[float, float, list[float]] | None:
+    """Build a normalized FCF base and growth rate from annual cash-flow history.
+
+    Uses the mean of up to the 3 most recent *positive* annual FCF figures so a
+    single negative/capex-spike year does not drag the base (or block the model).
+    Growth is CAGR across that positive window when 2+ points exist; if the newest
+    raw year is a sharp dip vs the normalized base, keep a modest 3% default.
+    """
+    raw = [float(v) for v in fcf_series.tolist() if pd.notna(v)]
+    if not raw:
+        return None
+
+    positive_window = [v for v in raw if v > 0][:3]
+    if not positive_window:
+        return None
+
+    normalized = float(np.mean(positive_window))
+    growth_rate = 0.03
+    if len(positive_window) >= 2:
+        years = len(positive_window) - 1
+        cagr = (positive_window[0] / positive_window[-1]) ** (1 / years) - 1
+        growth_rate = float(np.clip(cagr, 0.0, 0.15))
+
+    # Newest reported year (may be negative or depressed) vs normalized base.
+    if raw[0] < normalized * 0.5 and growth_rate == 0.0:
+        growth_rate = 0.03
+
+    return normalized, growth_rate, positive_window
+
+
 def fetch_current_price(ticker: str) -> tuple[float, date]:
     try:
         import yfinance as yf
@@ -84,16 +185,11 @@ def calculate_dcf(ticker: str, current_price: float) -> dict[str, Any]:
             return {"dcf_available": False, "dcf_error": "Insufficient cash flow data for DCF."}
         fcf_series = operating + capex
 
-    fcf_values = [float(v) for v in fcf_series.tolist() if pd.notna(v)]
-    if not fcf_values or fcf_values[0] <= 0:
+    normalized = normalize_fcf(fcf_series)
+    if normalized is None:
         return {"dcf_available": False, "dcf_error": "Insufficient cash flow data for DCF."}
 
-    latest_fcf = fcf_values[0]
-    growth_rate = 0.03
-    if len(fcf_values) >= 2 and fcf_values[-1] > 0:
-        years = len(fcf_values) - 1
-        cagr = (fcf_values[0] / fcf_values[-1]) ** (1 / years) - 1
-        growth_rate = float(np.clip(cagr, 0.0, 0.15))
+    latest_fcf, growth_rate, fcf_window = normalized
 
     beta = info.get("beta")
     wacc = 0.10 if beta is None or pd.isna(beta) else float(np.clip(0.04 + float(beta) * 0.06, 0.08, 0.15))
@@ -111,16 +207,16 @@ def calculate_dcf(ticker: str, current_price: float) -> dict[str, Any]:
     discounted_terminal = terminal_value / (1 + wacc) ** projection_years
     enterprise_value = discounted_fcf + discounted_terminal
 
-    total_debt = _balance_row(balance, "Total Debt", "Long Term Debt") or 0.0
-    cash = _balance_row(balance, "Cash And Cash Equivalents", "Cash") or 0.0
+    total_debt = resolve_total_debt(balance, info)
+    cash = resolve_cash(balance, info)
     net_debt = total_debt - cash
     equity_value = enterprise_value - net_debt
 
-    shares = info.get("sharesOutstanding")
-    if not shares or pd.isna(shares) or shares <= 0:
+    shares = resolve_share_count(info, balance)
+    if shares is None:
         return {"dcf_available": False, "dcf_error": "Insufficient share count data for DCF."}
 
-    dcf_value = equity_value / float(shares)
+    dcf_value = equity_value / shares
     if dcf_value <= 0:
         return {"dcf_available": False, "dcf_error": "DCF produced non-positive intrinsic value."}
 
@@ -140,7 +236,11 @@ def calculate_dcf(ticker: str, current_price: float) -> dict[str, Any]:
             "fcf_growth_rate": round(growth_rate, 4),
             "terminal_growth_rate": terminal_growth,
             "projection_years": projection_years,
-            "latest_fcf": round(latest_fcf, 0),
+            "normalized_fcf": round(latest_fcf, 0),
+            "fcf_window": [round(v, 0) for v in fcf_window],
+            "total_debt": round(total_debt, 0),
+            "cash": round(cash, 0),
+            "shares": round(shares, 0),
         },
     }
 
