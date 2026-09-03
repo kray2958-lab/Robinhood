@@ -9,7 +9,7 @@ description: >-
 
 # TechAnalysis Agent
 
-Batch agent that screens a list of tickers for **BUY** and **SELL** signals using [BuySkill](../buyskill/SKILL.md) and [SellSkill](../sellskill/SKILL.md).
+Batch agent that screens a list of tickers for **BUY** and **SELL** signals using [BuySkill](../buyskill/SKILL.md) and [SellSkill](../sellskill/SKILL.md) on a **1-hour** chart.
 
 ## Input
 
@@ -93,9 +93,9 @@ For TechAnalysis + DCF crosscheck, use [FundamentalAnalysis](../fundamentalanaly
 **BUY** only when **all** conditions pass:
 
 ```text
-✓ Golden Cross occurred within last 5 trading days
-✓ RSI(14) < 30
-✓ %K crossed above %D within last 3 trading days
+✓ Golden Cross occurred within last ~5 trading days (35 hourly bars)
+✓ RSI(14) touched ≤20 then crossed above 30 (last ~10 trading days / 70 hourly bars)
+✓ %K crossed above %D within last ~3 trading days (21 hourly bars)
 ✓ RVOL > 2.0
 ```
 
@@ -106,9 +106,9 @@ See [buyskill/SKILL.md](../buyskill/SKILL.md) for full indicator definitions.
 **SELL** only when **all** conditions pass:
 
 ```text
-✓ Death Cross occurred within last 5 trading days
-✓ RSI(14) > 70
-✓ %K crossed below %D within last 3 trading days
+✓ Death Cross occurred within last ~5 trading days (35 hourly bars)
+✓ RSI(14) touched ≥80 then crossed below 70 (last ~10 trading days / 70 hourly bars)
+✓ %K crossed below %D within last ~3 trading days (21 hourly bars)
 ✓ RVOL > 2.0
 ```
 

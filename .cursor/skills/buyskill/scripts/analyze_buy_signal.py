@@ -12,8 +12,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-MIN_TRADING_DAYS = 250
-LOOKBACK_CALENDAR_DAYS = 400
+# Hourly chart: more bar movement than daily, so crossovers trigger more often.
+CHART_INTERVAL = "1h"
+LOOKBACK_PERIOD = "60d"
+MIN_BARS = 250
+BARS_PER_TRADING_DAY = 7  # US regular-session hours (approx)
+GOLDEN_CROSS_LOOKBACK = 5 * BARS_PER_TRADING_DAY
+STOCH_LOOKBACK = 3 * BARS_PER_TRADING_DAY
+RSI_RECOVERY_LOOKBACK = 10 * BARS_PER_TRADING_DAY
 
 
 def fetch_ohlcv(ticker: str) -> pd.DataFrame:
@@ -27,8 +33,8 @@ def fetch_ohlcv(ticker: str) -> pd.DataFrame:
     symbol = ticker.upper().strip()
     data = yf.download(
         symbol,
-        period=f"{LOOKBACK_CALENDAR_DAYS}d",
-        interval="1d",
+        period=LOOKBACK_PERIOD,
+        interval=CHART_INTERVAL,
         auto_adjust=False,
         progress=False,
         threads=False,
@@ -50,7 +56,7 @@ def fetch_ohlcv(ticker: str) -> pd.DataFrame:
     frame.index = pd.to_datetime(frame.index).tz_localize(None)
     frame = frame.sort_index()
 
-    if len(frame) < MIN_TRADING_DAYS:
+    if len(frame) < MIN_BARS:
         raise ValueError("Insufficient historical data to calculate indicators.")
 
     return frame
@@ -82,9 +88,9 @@ def slow_stochastic(
 
 
 def detect_crossover(
-    fast: pd.Series, slow: pd.Series, lookback_days: int
+    fast: pd.Series, slow: pd.Series, lookback_bars: int
 ) -> tuple[bool, date | None, int | None]:
-    for i in range(1, lookback_days + 1):
+    for i in range(1, lookback_bars + 1):
         if len(fast) <= i or len(slow) <= i:
             break
         fast_today = fast.iloc[-i]
@@ -95,9 +101,28 @@ def detect_crossover(
             continue
         if fast_today > slow_today and fast_prev <= slow_prev:
             cross_date = fast.index[-i].date()
-            days_since = i - 1
-            return True, cross_date, days_since
+            bars_since = i - 1
+            return True, cross_date, bars_since
     return False, None, None
+
+
+def detect_rsi_bullish_recovery(
+    rsi_series: pd.Series, lookback_bars: int = RSI_RECOVERY_LOOKBACK
+) -> bool:
+    """True if RSI touched <= 20, then crossed above 30 within lookback bars."""
+    for i in range(1, lookback_bars + 1):
+        if len(rsi_series) <= i:
+            break
+        curr = rsi_series.iloc[-i]
+        prev = rsi_series.iloc[-i - 1]
+        if pd.isna(curr) or pd.isna(prev):
+            continue
+        if curr > 30 and prev <= 30:
+            start = max(0, len(rsi_series) - i - lookback_bars)
+            before_cross = rsi_series.iloc[start:-i]
+            if not before_cross.empty and (before_cross <= 20).any():
+                return True
+    return False
 
 
 def analyze(ticker: str) -> dict[str, Any]:
@@ -125,26 +150,37 @@ def analyze(ticker: str) -> dict[str, Any]:
     sma50_value = float(sma50.iloc[-1])
     sma200_value = float(sma200.iloc[-1])
 
-    golden_cross_recent, golden_cross_date, days_since_cross = detect_crossover(sma50, sma200, 5)
-    stochastic_bullish, _, _ = detect_crossover(percent_k, percent_d, 3)
+    golden_cross_recent, golden_cross_date, days_since_cross = detect_crossover(
+        sma50, sma200, GOLDEN_CROSS_LOOKBACK
+    )
+    stochastic_bullish, _, _ = detect_crossover(percent_k, percent_d, STOCH_LOOKBACK)
 
-    rsi_oversold = rsi_value < 30
+    rsi_oversold = detect_rsi_bullish_recovery(rsi14)
     rvol_gt_2 = rvol_value > 2.0
     buy_signal = golden_cross_recent and rsi_oversold and stochastic_bullish and rvol_gt_2
 
     failed_conditions: list[str] = []
     if not golden_cross_recent:
-        failed_conditions.append("Golden Cross did not occur within last 5 trading days")
+        failed_conditions.append(
+            f"Golden Cross did not occur within last {GOLDEN_CROSS_LOOKBACK} hourly bars "
+            f"(~5 trading days)"
+        )
     if not rsi_oversold:
-        failed_conditions.append(f"RSI(14) not oversold ({rsi_value:.1f} >= 30)")
+        failed_conditions.append(
+            f"RSI(14) did not recover from <=20 and cross above 30 "
+            f"within last {RSI_RECOVERY_LOOKBACK} hourly bars (latest {rsi_value:.1f})"
+        )
     if not stochastic_bullish:
-        failed_conditions.append("%K did not cross above %D within last 3 trading days")
+        failed_conditions.append(
+            f"%K did not cross above %D within last {STOCH_LOOKBACK} hourly bars (~3 trading days)"
+        )
     if not rvol_gt_2:
         failed_conditions.append(f"RVOL not above 2.0 ({rvol_value:.2f})")
 
     return {
         "ticker": ticker.upper().strip(),
         "date": analysis_date.isoformat(),
+        "chart_interval": CHART_INTERVAL,
         "golden_cross_recent": golden_cross_recent,
         "golden_cross_date": golden_cross_date.isoformat() if golden_cross_date else None,
         "days_since_cross": days_since_cross,

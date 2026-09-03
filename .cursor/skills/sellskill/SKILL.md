@@ -39,11 +39,13 @@ python .cursor/skills/sellskill/scripts/analyze_sell_signal.py TICKER
 
 Default: **Yahoo Finance** via `yfinance` (handled by the script).
 
-Alternatives if yfinance fails and the user has API keys: Polygon.io, Alpha Vantage, or IEX Cloud. Fetch at least **250 trading days** of daily OHLCV (`Open`, `High`, `Low`, `Close`, `Volume`) and apply the same indicator logic below.
+Alternatives if yfinance fails and the user has API keys: Polygon.io, Alpha Vantage, or IEX Cloud. Fetch at least **250 hourly bars** of OHLCV (`Open`, `High`, `Low`, `Close`, `Volume`) over about **60 calendar days** (`interval=1h`) and apply the same indicator logic below.
 
 ---
 
 ## Indicator Calculations
+
+All indicators use a **1-hour** chart (`interval=1h`) with about **60 calendar days** of history.
 
 ### 1. Death Cross (Must Be Recent)
 
@@ -60,7 +62,7 @@ and
 SMA50_yesterday >= SMA200_yesterday
 ```
 
-The Death Cross must have occurred within the most recent **5 trading days**.
+The Death Cross must have occurred within the most recent **~5 trading days** (**35 hourly bars**).
 
 ```python
 death_cross_recent = False
@@ -82,13 +84,26 @@ for i in range(1, 6):
 
 **Fail:** SMA50 above SMA200, cross > 5 days ago, no crossover, or insufficient data.
 
-### 2. RSI Overbought
+### 2. RSI Overbought Fade
 
 ```python
 RSI(14)
 ```
 
-**Pass:** `RSI(14) > 70` — store as `rsi_value`.
+**Pass:** Within the last **~10 trading days** (**70 hourly bars**), RSI(14) touched **≥ 80**, then **crossed below 70** (previous ≥ 70, current < 70). Store latest RSI as `rsi_value`.
+
+```python
+rsi_overbought = False
+
+for i in range(1, 71):
+    if rsi.iloc[-i] < 70 and rsi.iloc[-i - 1] >= 70:
+        before = rsi.iloc[max(0, len(rsi) - i - 70):-i]
+        if (before >= 80).any():
+            rsi_overbought = True
+            break
+```
+
+**Fail:** No ≥80 → cross-below-70 fade within the lookback.
 
 ### 3. Slow Stochastic Bearish Crossover
 
@@ -97,12 +112,12 @@ RSI(14)
 %D (3-period moving average of %K)
 ```
 
-**Pass:** `%K` crosses below `%D` today or within the last **3** trading sessions.
+**Pass:** `%K` crosses below `%D` within the last **~3 trading days** (**21 hourly bars**).
 
 ```python
 stochastic_bearish = False
 
-for i in range(1, 4):
+for i in range(1, 22):
     if (
         k.iloc[-i] < d.iloc[-i]
         and
@@ -127,7 +142,7 @@ RVOL = Current Volume / Average Volume(50)
 ```python
 sell_signal = (
     death_cross_recent
-    and rsi_value > 70
+    and rsi_overbought  # touched >=80 then crossed below 70
     and stochastic_bearish
     and rvol_value > 2.0
 )
@@ -169,9 +184,9 @@ After the table, list current values:
 ### Pass/fail checklist
 
 ```text
-✓ Death Cross occurred within last 5 trading days
-✓ RSI(14) > 70
-✓ %K crossed below %D within last 3 trading days
+✓ Death Cross occurred within last ~5 trading days (35 hourly bars)
+✓ RSI(14) touched ≥80 then crossed below 70 (last ~10 trading days / 70 hourly bars)
+✓ %K crossed below %D within last ~3 trading days (21 hourly bars)
 ✓ RVOL > 2.0
 ```
 
@@ -214,7 +229,7 @@ Use `✗` for failed conditions. When signal is **NO SELL**, list which conditio
 }
 ```
 
-**Insufficient history (< 250 trading days):**
+**Insufficient history (< 250 hourly bars):**
 
 ```json
 {
@@ -230,9 +245,9 @@ Use `✗` for failed conditions. When signal is **NO SELL**, list which conditio
 A stock is a **SELL** only if:
 
 ```text
-✓ Death Cross occurred within last 5 trading days
-✓ RSI(14) > 70
-✓ %K crossed below %D within last 3 trading days
+✓ Death Cross occurred within last ~5 trading days (35 hourly bars)
+✓ RSI(14) touched ≥80 then crossed below 70 (last ~10 trading days / 70 hourly bars)
+✓ %K crossed below %D within last ~3 trading days (21 hourly bars)
 ✓ RVOL > 2.0
 ```
 

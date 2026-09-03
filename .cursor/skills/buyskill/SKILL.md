@@ -39,11 +39,13 @@ python .cursor/skills/buyskill/scripts/analyze_buy_signal.py TICKER
 
 Default: **Yahoo Finance** via `yfinance` (handled by the script).
 
-Alternatives if yfinance fails and the user has API keys: Polygon.io, Alpha Vantage, or IEX Cloud. Fetch at least **250 trading days** of daily OHLCV (`Open`, `High`, `Low`, `Close`, `Volume`) and apply the same indicator logic below.
+Alternatives if yfinance fails and the user has API keys: Polygon.io, Alpha Vantage, or IEX Cloud. Fetch at least **250 hourly bars** of OHLCV (`Open`, `High`, `Low`, `Close`, `Volume`) over about **60 calendar days** (`interval=1h`) and apply the same indicator logic below.
 
 ---
 
 ## Indicator Calculations
+
+All indicators use a **1-hour** chart (`interval=1h`) with about **60 calendar days** of history.
 
 ### 1. Golden Cross (Must Be Recent)
 
@@ -60,7 +62,7 @@ and
 SMA50_yesterday <= SMA200_yesterday
 ```
 
-The Golden Cross must have occurred within the most recent **5 trading days**.
+The Golden Cross must have occurred within the most recent **~5 trading days** (**35 hourly bars**).
 
 ```python
 golden_cross_recent = False
@@ -82,13 +84,26 @@ for i in range(1, 6):
 
 **Fail:** SMA50 below SMA200, cross > 5 days ago, no crossover, or insufficient data.
 
-### 2. RSI Oversold
+### 2. RSI Oversold Recovery
 
 ```python
 RSI(14)
 ```
 
-**Pass:** `RSI(14) < 30` — store as `rsi_value`.
+**Pass:** Within the last **~10 trading days** (**70 hourly bars**), RSI(14) touched **≤ 20**, then **crossed above 30** (previous ≤ 30, current > 30). Store latest RSI as `rsi_value`.
+
+```python
+rsi_oversold = False
+
+for i in range(1, 71):
+    if rsi.iloc[-i] > 30 and rsi.iloc[-i - 1] <= 30:
+        before = rsi.iloc[max(0, len(rsi) - i - 70):-i]
+        if (before <= 20).any():
+            rsi_oversold = True
+            break
+```
+
+**Fail:** No ≤20 → cross-above-30 recovery within the lookback.
 
 ### 3. Slow Stochastic Bullish Crossover
 
@@ -97,12 +112,12 @@ RSI(14)
 %D (3-period moving average of %K)
 ```
 
-**Pass:** `%K` crosses above `%D` today or within the last **3** trading sessions.
+**Pass:** `%K` crosses above `%D` within the last **~3 trading days** (**21 hourly bars**).
 
 ```python
 stochastic_bullish = False
 
-for i in range(1, 4):
+for i in range(1, 22):
     if (
         k.iloc[-i] > d.iloc[-i]
         and
@@ -127,7 +142,7 @@ RVOL = Current Volume / Average Volume(50)
 ```python
 buy_signal = (
     golden_cross_recent
-    and rsi_value < 30
+    and rsi_oversold  # touched <=20 then crossed above 30
     and stochastic_bullish
     and rvol_value > 2.0
 )
@@ -155,9 +170,9 @@ Always return **both** a markdown table and structured JSON.
 After the table, show pass/fail for each rule:
 
 ```text
-✓ Golden Cross occurred within last 5 trading days
-✓ RSI(14) < 30
-✓ %K crossed above %D within last 3 trading days
+✓ Golden Cross occurred within last ~5 trading days (35 hourly bars)
+✓ RSI(14) touched ≤20 then crossed above 30 (last ~10 trading days / 70 hourly bars)
+✓ %K crossed above %D within last ~3 trading days (21 hourly bars)
 ✓ RVOL > 2.0
 ```
 
@@ -200,7 +215,7 @@ Use `✗` for failed conditions. When signal is **NO BUY**, list which condition
 }
 ```
 
-**Insufficient history (< 250 trading days):**
+**Insufficient history (< 250 hourly bars):**
 
 ```json
 {
@@ -216,9 +231,9 @@ Use `✗` for failed conditions. When signal is **NO BUY**, list which condition
 A stock is a **BUY** only if:
 
 ```text
-✓ Golden Cross occurred within last 5 trading days
-✓ RSI(14) < 30
-✓ %K crossed above %D within last 3 trading days
+✓ Golden Cross occurred within last ~5 trading days (35 hourly bars)
+✓ RSI(14) touched ≤20 then crossed above 30 (last ~10 trading days / 70 hourly bars)
+✓ %K crossed above %D within last ~3 trading days (21 hourly bars)
 ✓ RVOL > 2.0
 ```
 
