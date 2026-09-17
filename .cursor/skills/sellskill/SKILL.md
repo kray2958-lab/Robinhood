@@ -45,7 +45,7 @@ Alternatives if yfinance fails and the user has API keys: Polygon.io, Alpha Vant
 
 ## Indicator Calculations
 
-All indicators use a **1-hour** chart (`interval=1h`) with about **60 calendar days** of history.
+All indicators use a **1-hour** chart (`interval=1h`) with about **60 calendar days** of history, except **Slow Stochastic**, which uses a **daily** chart (`interval=1d`) with a **3-day** crossover lookback.
 
 ### 1. Death Cross (Must Be Recent)
 
@@ -112,12 +112,12 @@ for i in range(1, 71):
 %D (3-period moving average of %K)
 ```
 
-**Pass:** `%K` crosses below `%D` within the last **~3 trading days** (**21 hourly bars**).
+**Pass:** `%K` crosses below `%D` within the last **3 daily bars** (daily chart).
 
 ```python
 stochastic_bearish = False
 
-for i in range(1, 22):
+for i in range(1, 4):
     if (
         k.iloc[-i] < d.iloc[-i]
         and
@@ -186,7 +186,7 @@ After the table, list current values:
 ```text
 ✓ Death Cross occurred within last ~5 trading days (35 hourly bars)
 ✓ RSI(14) touched ≥80 then crossed below 70 (last ~10 trading days / 70 hourly bars)
-✓ %K crossed below %D within last ~3 trading days (21 hourly bars)
+✓ %K crossed below %D within last 3 daily bars
 ✓ RVOL > 2.0
 ```
 
@@ -247,7 +247,7 @@ A stock is a **SELL** only if:
 ```text
 ✓ Death Cross occurred within last ~5 trading days (35 hourly bars)
 ✓ RSI(14) touched ≥80 then crossed below 70 (last ~10 trading days / 70 hourly bars)
-✓ %K crossed below %D within last ~3 trading days (21 hourly bars)
+✓ %K crossed below %D within last 3 daily bars
 ✓ RVOL > 2.0
 ```
 

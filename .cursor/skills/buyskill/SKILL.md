@@ -45,7 +45,7 @@ Alternatives if yfinance fails and the user has API keys: Polygon.io, Alpha Vant
 
 ## Indicator Calculations
 
-All indicators use a **1-hour** chart (`interval=1h`) with about **60 calendar days** of history.
+All indicators use a **1-hour** chart (`interval=1h`) with about **60 calendar days** of history, except **Slow Stochastic**, which uses a **daily** chart (`interval=1d`) with a **3-day** crossover lookback.
 
 ### 1. Golden Cross (Must Be Recent)
 
@@ -112,12 +112,12 @@ for i in range(1, 71):
 %D (3-period moving average of %K)
 ```
 
-**Pass:** `%K` crosses above `%D` within the last **~3 trading days** (**21 hourly bars**).
+**Pass:** `%K` crosses above `%D` within the last **3 daily bars** (daily chart).
 
 ```python
 stochastic_bullish = False
 
-for i in range(1, 22):
+for i in range(1, 4):
     if (
         k.iloc[-i] > d.iloc[-i]
         and
@@ -172,7 +172,7 @@ After the table, show pass/fail for each rule:
 ```text
 ✓ Golden Cross occurred within last ~5 trading days (35 hourly bars)
 ✓ RSI(14) touched ≤20 then crossed above 30 (last ~10 trading days / 70 hourly bars)
-✓ %K crossed above %D within last ~3 trading days (21 hourly bars)
+✓ %K crossed above %D within last 3 daily bars
 ✓ RVOL > 2.0
 ```
 
@@ -233,7 +233,7 @@ A stock is a **BUY** only if:
 ```text
 ✓ Golden Cross occurred within last ~5 trading days (35 hourly bars)
 ✓ RSI(14) touched ≤20 then crossed above 30 (last ~10 trading days / 70 hourly bars)
-✓ %K crossed above %D within last ~3 trading days (21 hourly bars)
+✓ %K crossed above %D within last 3 daily bars
 ✓ RVOL > 2.0
 ```
 

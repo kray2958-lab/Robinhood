@@ -95,7 +95,7 @@ For TechAnalysis + DCF crosscheck, use [FundamentalAnalysis](../fundamentalanaly
 ```text
 ✓ Golden Cross occurred within last ~5 trading days (35 hourly bars)
 ✓ RSI(14) touched ≤20 then crossed above 30 (last ~10 trading days / 70 hourly bars)
-✓ %K crossed above %D within last ~3 trading days (21 hourly bars)
+✓ %K crossed above %D within last 3 daily bars
 ✓ RVOL > 2.0
 ```
 
@@ -108,7 +108,7 @@ See [buyskill/SKILL.md](../buyskill/SKILL.md) for full indicator definitions.
 ```text
 ✓ Death Cross occurred within last ~5 trading days (35 hourly bars)
 ✓ RSI(14) touched ≥80 then crossed below 70 (last ~10 trading days / 70 hourly bars)
-✓ %K crossed below %D within last ~3 trading days (21 hourly bars)
+✓ %K crossed below %D within last 3 daily bars
 ✓ RVOL > 2.0
 ```
 

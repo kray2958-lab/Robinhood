@@ -12,17 +12,27 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-# Hourly chart: more bar movement than daily, so crossovers trigger more often.
+# Hourly chart for trend/momentum/volume; stochastic uses daily bars.
 CHART_INTERVAL = "1h"
 LOOKBACK_PERIOD = "60d"
 MIN_BARS = 250
 BARS_PER_TRADING_DAY = 7  # US regular-session hours (approx)
 GOLDEN_CROSS_LOOKBACK = 5 * BARS_PER_TRADING_DAY
-STOCH_LOOKBACK = 3 * BARS_PER_TRADING_DAY
 RSI_RECOVERY_LOOKBACK = 10 * BARS_PER_TRADING_DAY
 
+STOCH_INTERVAL = "1d"
+STOCH_LOOKBACK_PERIOD = "120d"
+STOCH_MIN_BARS = 30
+STOCH_LOOKBACK = 3  # last 3 daily bars
 
-def fetch_ohlcv(ticker: str) -> pd.DataFrame:
+
+def fetch_ohlcv(
+    ticker: str,
+    *,
+    period: str,
+    interval: str,
+    min_bars: int,
+) -> pd.DataFrame:
     try:
         import yfinance as yf
     except ImportError as exc:
@@ -33,8 +43,8 @@ def fetch_ohlcv(ticker: str) -> pd.DataFrame:
     symbol = ticker.upper().strip()
     data = yf.download(
         symbol,
-        period=LOOKBACK_PERIOD,
-        interval=CHART_INTERVAL,
+        period=period,
+        interval=interval,
         auto_adjust=False,
         progress=False,
         threads=False,
@@ -56,7 +66,7 @@ def fetch_ohlcv(ticker: str) -> pd.DataFrame:
     frame.index = pd.to_datetime(frame.index).tz_localize(None)
     frame = frame.sort_index()
 
-    if len(frame) < MIN_BARS:
+    if len(frame) < min_bars:
         raise ValueError("Insufficient historical data to calculate indicators.")
 
     return frame
@@ -127,21 +137,29 @@ def detect_rsi_bullish_recovery(
 
 def analyze(ticker: str) -> dict[str, Any]:
     try:
-        history = fetch_ohlcv(ticker)
+        history = fetch_ohlcv(
+            ticker, period=LOOKBACK_PERIOD, interval=CHART_INTERVAL, min_bars=MIN_BARS
+        )
+        daily = fetch_ohlcv(
+            ticker,
+            period=STOCH_LOOKBACK_PERIOD,
+            interval=STOCH_INTERVAL,
+            min_bars=STOCH_MIN_BARS,
+        )
     except ValueError as exc:
         return {"ticker": ticker.upper().strip(), "error": str(exc)}
     except Exception:
         return {"ticker": ticker.upper().strip(), "error": "Unable to retrieve market data."}
 
     close = history["Close"]
-    high = history["High"]
-    low = history["Low"]
     volume = history["Volume"]
 
     sma50 = sma(close, 50)
     sma200 = sma(close, 200)
     rsi14 = rsi(close, 14)
-    percent_k, percent_d = slow_stochastic(high, low, close, 14, 3)
+    percent_k, percent_d = slow_stochastic(
+        daily["High"], daily["Low"], daily["Close"], 14, 3
+    )
     avg_volume_50 = volume.rolling(window=50, min_periods=50).mean()
 
     analysis_date = close.index[-1].date()
@@ -172,7 +190,7 @@ def analyze(ticker: str) -> dict[str, Any]:
         )
     if not stochastic_bullish:
         failed_conditions.append(
-            f"%K did not cross above %D within last {STOCH_LOOKBACK} hourly bars (~3 trading days)"
+            f"%K did not cross above %D within last {STOCH_LOOKBACK} daily bars"
         )
     if not rvol_gt_2:
         failed_conditions.append(f"RVOL not above 2.0 ({rvol_value:.2f})")
@@ -181,6 +199,7 @@ def analyze(ticker: str) -> dict[str, Any]:
         "ticker": ticker.upper().strip(),
         "date": analysis_date.isoformat(),
         "chart_interval": CHART_INTERVAL,
+        "stochastic_interval": STOCH_INTERVAL,
         "golden_cross_recent": golden_cross_recent,
         "golden_cross_date": golden_cross_date.isoformat() if golden_cross_date else None,
         "days_since_cross": days_since_cross,
